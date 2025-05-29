@@ -2,7 +2,6 @@ import json
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import litellm
-import openai
 from dotenv import load_dotenv
 
 from jobber.core.skills.get_screenshot import get_screenshot
@@ -16,13 +15,14 @@ class BaseAgent:
         self,
         system_prompt: str = "You are a helpful assistant",
         tools: Optional[List[Tuple[Callable, str]]] = None,
+        model: str = "groq/llama2-70b-4096"  # Default to Groq model
     ):
         load_dotenv()
         self.name = self.__class__.__name__
         self.messages = [{"role": "system", "content": system_prompt}]
         self.tools_list = []
         self.executable_functions_list = {}
-        self.llm_config = {"model": "gpt-4o-mini"}
+        self.llm_config = {"model": model}
         if tools:
             self._initialize_tools(tools)
             self.llm_config.update({"tools": self.tools_list, "tool_choice": "auto"})
@@ -44,7 +44,6 @@ class BaseAgent:
         while True:
             litellm.logging = False
             litellm.success_callback = ["langsmith"]
-            # litellm.set_verbose = True
             try:
                 response = litellm.completion(
                     messages=self.messages,
@@ -53,9 +52,9 @@ class BaseAgent:
                         "run_name": f"{self.name}Run",
                     },
                 )
-            except openai.BadRequestError as e:
-                should_retry = litellm._should_retry(e.status_code)
-                print(f"should_retry: {should_retry}")
+            except Exception as e:
+                logger.error(f"Error in LLM call: {str(e)}")
+                raise
 
             response_message = response.choices[0].message
             tool_calls = response_message.tool_calls

@@ -2,10 +2,7 @@ import json
 from typing import Callable, List, Optional, Tuple, Type
 
 import litellm
-import openai
-from langsmith.wrappers import wrap_openai
 from pydantic import BaseModel
-
 
 from jobber_fsm.utils.function_utils import get_function_schema
 from jobber_fsm.utils.logger import logger
@@ -24,6 +21,7 @@ class BaseAgent:
         output_format: Type[BaseModel],
         tools: Optional[List[Tuple[Callable, str]]] = None,
         keep_message_history: bool = True,
+        model: str = "groq/llama2-70b-4096",  # Default to Groq model
     ):
         # Metdata
         self.name = name
@@ -37,17 +35,16 @@ class BaseAgent:
         self.input_format = input_format
         self.output_format = output_format
 
-        # Llm client
-        self.client = wrap_openai(openai.Client())
-        # TODO: use lite llm here.
-        # self.llm_config = {"model": "gpt-4o-2024-08-06"}
+        # Model configuration
+        self.model = model
+        self.llm_config = {"model": model}
 
         # Tools
         self.tools_list = []
         self.executable_functions_list = {}
         if tools:
             self._initialize_tools(tools)
-            # self.llm_config.update({"tools": self.tools_list, "tool_choice": "auto"})
+            self.llm_config.update({"tools": self.tools_list, "tool_choice": "auto"})
 
     def _initialize_tools(self, tools: List[Tuple[Callable, str]]):
         for func, func_desc in tools:
@@ -80,40 +77,35 @@ class BaseAgent:
                 }
             )
 
-        # print(self.messages)
-
         # TODO: add a max_turn here to prevent a inifinite fallout
         while True:
-            # TODO:
-            # 1. replace this with litellm post structured json is supported.
-            # 2. exeception handling while calling the client
-            if len(self.tools_list) == 0:
-                response = self.client.beta.chat.completions.parse(
-                    model="gpt-4o-2024-08-06",
-                    messages=self.messages,
-                    response_format=self.output_format,
-                )
-            else:
-                # print(self.tools_list)
-                response = self.client.beta.chat.completions.parse(
-                    model="gpt-4o-2024-08-06",
-                    messages=self.messages,
-                    response_format=self.output_format,
-                    tool_choice="auto",
-                    tools=self.tools_list,
-                )
-            response_message = response.choices[0].message
-            # print(response_message)
-            tool_calls = response_message.tool_calls
+            try:
+                if len(self.tools_list) == 0:
+                    response = litellm.completion(
+                        messages=self.messages,
+                        **self.llm_config,
+                        response_format=self.output_format,
+                    )
+                else:
+                    response = litellm.completion(
+                        messages=self.messages,
+                        **self.llm_config,
+                        response_format=self.output_format,
+                    )
+                response_message = response.choices[0].message
+                tool_calls = response_message.tool_calls
 
-            if tool_calls:
-                self.messages.append(response_message)
-                for tool_call in tool_calls:
-                    await self._append_tool_response(tool_call)
-                continue
+                if tool_calls:
+                    self.messages.append(response_message)
+                    for tool_call in tool_calls:
+                        await self._append_tool_response(tool_call)
+                    continue
 
-            parsed_response_content: self.output_format = response_message.parsed
-            return parsed_response_content
+                parsed_response_content: self.output_format = response_message.parsed
+                return parsed_response_content
+            except Exception as e:
+                logger.error(f"Error in LLM call: {str(e)}")
+                raise
 
     async def _append_tool_response(self, tool_call):
         function_name = tool_call.function.name
@@ -121,7 +113,6 @@ class BaseAgent:
         function_args = json.loads(tool_call.function.arguments)
         try:
             function_response = await function_to_call(**function_args)
-            # print(function_response)
             self.messages.append(
                 {
                     "tool_call_id": tool_call.id,

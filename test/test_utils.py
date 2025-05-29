@@ -6,19 +6,56 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+import litellm
 from dotenv import load_dotenv
 from nltk.tokenize import word_tokenize  # type: ignore
-from openai import OpenAI
 
 load_dotenv()
-client = OpenAI()
+
+
+def generate_from_llm(
+    messages: List[Dict[str, str]],
+    model: str = "groq/llama2-70b-4096",
+    temperature: float = 0,
+    max_tokens: int = 768,
+    top_p: float = 1.0,
+    context_length: int = 0,
+    stop_token: Optional[str] = None,
+) -> str:
+    """
+    Generates a response from an LLM based on a conversation constructed from a List of messages.
+
+    This function makes a call to the LLM API using specified parameters to control the generation.
+
+    Parameters:
+        messages (List[dict[str, str]]): A List of messages to construct the conversation context.
+        model (str): The model name to use for generating the completion.
+        temperature (float): Sampling temperature for generation.
+        max_tokens (int): Maximum number of tokens to generate.
+        top_p (float): Nucleus sampling parameter controlling the size of the probability mass to sample from.
+        context_length (int): The maximum number of tokens from `messages` to use for context.
+        stop_token (str, optional): A token at which to stop generating further tokens.
+
+    Returns:
+        str: The generated response as a string.
+    """
+    response = litellm.completion(
+        model=model,
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        top_p=top_p,
+        stop=[stop_token] if stop_token else None,
+    )
+    answer: str = response.choices[0].message.content
+    return answer
 
 
 def llm_fuzzy_match(pred: str, reference: str, question: str) -> float:
     """
     Evaluates if a predicted answer matches a reference answer semantically, considering the context of a question.
 
-    This function simulates a grading scenario, understanding that a student's answer may use different wording or phrasing from the reference answer. It uses GPT-4-turbo model to assess semantic equivalence.
+    This function simulates a grading scenario, understanding that a student's answer may use different wording or phrasing from the reference answer. It uses Groq's Llama2 model to assess semantic equivalence.
 
     Parameters:
         pred (str): The student's predicted answer.
@@ -41,8 +78,7 @@ def llm_fuzzy_match(pred: str, reference: str, question: str) -> float:
         {"role": "user", "content": message},
     ]
 
-    response = generate_from_openai_chat_completion(
-        model="gpt-4-turbo-preview",
+    response = generate_from_llm(
         messages=messages,
         temperature=0,
         max_tokens=768,
@@ -61,7 +97,7 @@ def llm_ua_match(pred: str, reference: str, question: str) -> float:
     Evaluates the alignment between a reported reason for a task being unachievable and the actual reason.
 
     This function reviews both the actual and reported reasons for a task's unachievability within the context of the task.
-    It assesses if the reported reason is implicitly or explicitly in line with the actual reason, using GPT-turbo model.
+    It assesses if the reported reason is implicitly or explicitly in line with the actual reason, using Groq's Llama2 model.
 
     Parameters:
         pred (str): The reported unachievable reason by an individual.
@@ -89,8 +125,7 @@ def llm_ua_match(pred: str, reference: str, question: str) -> float:
         {"role": "user", "content": message},
     ]
 
-    response = generate_from_openai_chat_completion(
-        model="gpt-4-turbo-preview",
+    response = generate_from_llm(
         messages=messages,
         temperature=0,
         max_tokens=768,
@@ -102,56 +137,6 @@ def llm_ua_match(pred: str, reference: str, question: str) -> float:
     else:
         assert "same" in response
         return 1.0
-
-
-def generate_from_openai_chat_completion(
-    messages: List[Dict[str, str]],
-    model: str,
-    temperature: float,
-    max_tokens: int,
-    top_p: float,
-    context_length: int,
-    stop_token: Optional[str] = None,
-) -> str:
-    """
-    Generates a response from OpenAI's chat completions based on a conversation constructed from a List of messages.
-
-    This function makes a call to the OpenAI API using specified parameters to control the generation.
-    It requires an API key to be set in the environment variables.
-
-    Parameters:
-        messages (List[dict[str, str]]): A List of messages to construct the conversation context.
-        model (str): The model name to use for generating the completion.
-        temperature (float): Sampling temperature for generation.
-        max_tokens (int): Maximum number of tokens to generate.
-        top_p (float): Nucleus sampling parameter controlling the size of the probability mass to sample from.
-        context_length (int): The maximum number of tokens from `messages` to use for context.
-        stop_token (str, optional): A token at which to stop generating further tokens.
-
-    Returns:
-        str: The generated response as a string.
-
-    Raises:
-        ValueError: If the 'OPENAI_API_KEY' environment variable is not set.
-    """
-    if "OPENAI_API_KEY" not in os.environ:
-        raise ValueError(
-            "OPENAI_API_KEY environment variable must be set when using OpenAI API."
-        )
-    client.api_key = os.environ["OPENAI_API_KEY"]
-    client.organization = os.environ.get("OPENAI_ORGANIZATION", "")
-
-    response = client.chat.completions.create(
-        model=model,
-        messages=messages,  # type: ignore
-        temperature=temperature,
-        max_tokens=max_tokens,
-        top_p=top_p,
-        n=1,
-        stop=[stop_token] if stop_token else None,
-    )
-    answer: str = response.choices[0].message.content  # type: ignore
-    return answer
 
 
 def clean_answer(answer: str) -> str:
