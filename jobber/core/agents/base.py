@@ -1,4 +1,6 @@
 import json
+import asyncio
+import random
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import litellm
@@ -17,12 +19,21 @@ class BaseAgent:
         system_prompt: str = "You are a helpful assistant",
         tools: Optional[List[Tuple[Callable, str]]] = None,
         model: Optional[str] = None,
+        api_call_delay: float = 1.0,  # Default 1 second delay between API calls
+        max_retries: int = 3,  # Default number of retries
+        initial_retry_delay: float = 0.1,  # Initial delay in seconds
+        max_retry_delay: float = 10.0,  # Maximum delay in seconds
     ):
         load_dotenv()
         self.name = self.__class__.__name__
         self.messages = [{"role": "system", "content": system_prompt}]
         self.tools_list = []
         self.executable_functions_list = {}
+        self.api_call_delay = api_call_delay
+        self.last_api_call_time = 0
+        self.max_retries = max_retries
+        self.initial_retry_delay = initial_retry_delay
+        self.max_retry_delay = max_retry_delay
         
         # Get model configuration
         model_config = get_model_config(model)
@@ -45,24 +56,86 @@ class BaseAgent:
             )
             self.executable_functions_list[function.__name__] = function
 
-    async def generate_reply(
-        self, messages: List[Dict[str, Any]], sender
-    ) -> Dict[str, Any]:
-        self.messages.extend(messages)
-        processed_messages = self._process_messages(self.messages)
-        self.messages = processed_messages
+    def _process_message_content(self, content: Any) -> str:
+        """
+        Process message content to ensure it's a string for Groq API.
+        If content is a list (containing text and image), extract only the text.
+        """
+        if isinstance(content, list):
+            # Extract text content from the list
+            text_content = []
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    text_content.append(item.get("text", ""))
+            return " ".join(text_content)
+        elif isinstance(content, str):
+            return content
+        else:
+            return str(content)
 
+    async def _wait_for_rate_limit(self):
+        """Wait for the configured delay between API calls"""
+        current_time = asyncio.get_event_loop().time()
+        time_since_last_call = current_time - self.last_api_call_time
+        if time_since_last_call < self.api_call_delay:
+            await asyncio.sleep(self.api_call_delay - time_since_last_call)
+        self.last_api_call_time = asyncio.get_event_loop().time()
+
+    async def _make_api_call_with_retry(self, messages: List[Dict[str, Any]]) -> Any:
+        """
+        Make API call with retry logic for rate limit errors.
+        Uses exponential backoff with jitter.
+        """
+        retry_count = 0
         while True:
-            litellm.logging = False
-            litellm.success_callback = ["langsmith"]
             try:
-                response = litellm.completion(
-                    messages=self.messages,
+                await self._wait_for_rate_limit()
+                return litellm.completion(
+                    messages=messages,
                     **self.llm_config,
                     metadata={
                         "run_name": f"{self.name}Run",
                     },
                 )
+            except litellm.RateLimitError as e:
+                retry_count += 1
+                if retry_count > self.max_retries:
+                    logger.error(f"Max retries ({self.max_retries}) exceeded. Last error: {str(e)}")
+                    raise
+
+                # Calculate delay with exponential backoff and jitter
+                delay = min(
+                    self.initial_retry_delay * (2 ** (retry_count - 1)),
+                    self.max_retry_delay
+                )
+                # Add jitter (±20%)
+                jitter = delay * 0.2
+                delay = delay + random.uniform(-jitter, jitter)
+                
+                logger.info(f"Rate limit hit. Retrying in {delay:.2f} seconds (attempt {retry_count}/{self.max_retries})")
+                await asyncio.sleep(delay)
+            except Exception as e:
+                logger.error(f"Error in LLM call: {str(e)}")
+                raise
+
+    async def generate_reply(
+        self, messages: List[Dict[str, Any]], sender
+    ) -> Dict[str, Any]:
+        # Process messages to ensure content is string
+        processed_messages = []
+        for msg in messages:
+            processed_msg = msg.copy()
+            processed_msg["content"] = self._process_message_content(msg["content"])
+            processed_messages.append(processed_msg)
+
+        self.messages.extend(processed_messages)
+        self.messages = self._process_messages(self.messages)
+
+        while True:
+            litellm.logging = False
+            litellm.success_callback = ["langsmith"]
+            try:
+                response = await self._make_api_call_with_retry(self.messages)
             except Exception as e:
                 logger.error(f"Error in LLM call: {str(e)}")
                 raise
@@ -120,8 +193,6 @@ class BaseAgent:
                             "terminate": False,
                             "content": extracted_response.get("next_step"),
                         }
-                # handling the case when browser nav does not send ##TERMINATE TASK## in its response. We will get an error in extract_json function which we are catching here
-                # we still return terminate true and send the message as is to the planner
                 except Exception as e:
                     logger.info(
                         f"navigator did not send ##Terminate task## error - {e} & content - {content}"
@@ -157,7 +228,6 @@ class BaseAgent:
                                 "image_url": {"url": f"{screenshot}"},
                             },
                         ],
-                        # "content": query,
                     }
                 ],
                 None,
