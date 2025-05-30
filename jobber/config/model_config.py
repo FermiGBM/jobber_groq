@@ -26,7 +26,7 @@ from typing import Dict, Any, Optional
 
 # Provider API base URLs
 API_BASES = {
-    "groq": "https://api.groq.com/v1",
+    "groq": "https://api.groq.com/openai/v1",  # Updated to use OpenAI-compatible endpoint
     "openai": "https://api.openai.com/v1",
     "anthropic": "https://api.anthropic.com/v1"
 }
