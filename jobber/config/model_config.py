@@ -1,6 +1,6 @@
 """
-Model configuration settings for the Jobber project.
-This file centralizes all model-related configurations.
+Model configuration for jobber.
+Contains settings for different LLM providers and models.
 
 USER GUIDE:
 -----------
@@ -21,10 +21,10 @@ Example usage in code:
     agent = BaseAgent(model="gpt-4-turbo-preview")
 """
 
-from typing import Dict, Optional
+from typing import Dict, Any, Optional
 
 # Available models and their configurations
-AVAILABLE_MODELS = {
+AVAILABLE_MODELS: Dict[str, Dict[str, Any]] = {
     "groq/llama-3.3-70b-versatile": {
         "provider": "groq",
         "max_tokens": 4096,
@@ -37,13 +37,13 @@ AVAILABLE_MODELS = {
         "temperature": 0.7,
         "top_p": 1.0,
     },
-    "gpt-4-turbo-preview": {
+    "openai/gpt-4-turbo-preview": {
         "provider": "openai",
         "max_tokens": 4096,
         "temperature": 0.7,
         "top_p": 1.0,
     },
-    "claude-3-opus-20240229": {
+    "anthropic/claude-3-opus-20240229": {
         "provider": "anthropic",
         "max_tokens": 4096,
         "temperature": 0.7,
@@ -55,42 +55,38 @@ AVAILABLE_MODELS = {
 # Default model to use
 DEFAULT_MODEL = "groq/llama-3.3-70b-versatile"
 
-def get_model_config(model_name: Optional[str] = None) -> Dict:
+def get_model_config(model: Optional[str] = None) -> Dict[str, Any]:
     """
-    Get the configuration for a specific model.
-    If no model is specified, returns the default model configuration.
+    Get configuration for a specific model.
     
     Args:
-        model_name (str, optional): Name of the model to get configuration for.
+        model: Model identifier. If None, returns default model config.
         
     Returns:
-        Dict: Model configuration including provider and parameters.
-        
-    Raises:
-        ValueError: If the specified model is not available.
+        Dictionary containing model configuration.
     """
-    model = model_name or DEFAULT_MODEL
+    if model is None:
+        model = DEFAULT_MODEL
+        
     if model not in AVAILABLE_MODELS:
-        raise ValueError(
-            f"Model '{model}' not found in available models. "
-            f"Available models: {list(AVAILABLE_MODELS.keys())}"
-        )
+        raise ValueError(f"Model {model} not found in available models. Available models: {list(AVAILABLE_MODELS.keys())}")
+        
     return AVAILABLE_MODELS[model]
 
 def get_default_model() -> str:
     """
-    Get the default model name.
+    Get the default model identifier.
     
     Returns:
-        str: Name of the default model.
+        String containing the default model identifier.
     """
     return DEFAULT_MODEL
 
 def list_available_models() -> list:
     """
-    Get a list of all available models.
+    List all available models.
     
     Returns:
-        list: List of available model names.
+        List of available model identifiers.
     """
     return list(AVAILABLE_MODELS.keys()) 
