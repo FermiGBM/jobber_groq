@@ -4,6 +4,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 import litellm
 from dotenv import load_dotenv
 
+from jobber.config.model_config import get_model_config, get_default_model
 from jobber.core.skills.get_screenshot import get_screenshot
 from jobber.utils.extract_json import extract_json
 from jobber.utils.function_utils import get_function_schema
@@ -15,14 +16,23 @@ class BaseAgent:
         self,
         system_prompt: str = "You are a helpful assistant",
         tools: Optional[List[Tuple[Callable, str]]] = None,
-        model: str = "groq/llama2-70b-4096"  # Default to Groq model
+        model: Optional[str] = None,
     ):
         load_dotenv()
         self.name = self.__class__.__name__
         self.messages = [{"role": "system", "content": system_prompt}]
         self.tools_list = []
         self.executable_functions_list = {}
-        self.llm_config = {"model": model}
+        
+        # Get model configuration
+        model_config = get_model_config(model)
+        self.llm_config = {
+            "model": model or get_default_model(),
+            "temperature": model_config["temperature"],
+            "max_tokens": model_config["max_tokens"],
+            "top_p": model_config["top_p"],
+        }
+        
         if tools:
             self._initialize_tools(tools)
             self.llm_config.update({"tools": self.tools_list, "tool_choice": "auto"})

@@ -4,6 +4,7 @@ from typing import Callable, List, Optional, Tuple, Type
 import litellm
 from pydantic import BaseModel
 
+from jobber.config.model_config import get_model_config, get_default_model
 from jobber_fsm.utils.function_utils import get_function_schema
 from jobber_fsm.utils.logger import logger
 
@@ -21,7 +22,7 @@ class BaseAgent:
         output_format: Type[BaseModel],
         tools: Optional[List[Tuple[Callable, str]]] = None,
         keep_message_history: bool = True,
-        model: str = "groq/llama2-70b-4096",  # Default to Groq model
+        model: Optional[str] = None,
     ):
         # Metdata
         self.name = name
@@ -35,9 +36,14 @@ class BaseAgent:
         self.input_format = input_format
         self.output_format = output_format
 
-        # Model configuration
-        self.model = model
-        self.llm_config = {"model": model}
+        # Get model configuration
+        model_config = get_model_config(model)
+        self.llm_config = {
+            "model": model or get_default_model(),
+            "temperature": model_config["temperature"],
+            "max_tokens": model_config["max_tokens"],
+            "top_p": model_config["top_p"],
+        }
 
         # Tools
         self.tools_list = []

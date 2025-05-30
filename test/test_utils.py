@@ -10,15 +10,17 @@ import litellm
 from dotenv import load_dotenv
 from nltk.tokenize import word_tokenize  # type: ignore
 
+from jobber.config.model_config import get_model_config, get_default_model
+
 load_dotenv()
 
 
 def generate_from_llm(
     messages: List[Dict[str, str]],
-    model: str = "groq/llama2-70b-4096",
-    temperature: float = 0,
-    max_tokens: int = 768,
-    top_p: float = 1.0,
+    model: Optional[str] = None,
+    temperature: Optional[float] = None,
+    max_tokens: Optional[int] = None,
+    top_p: Optional[float] = None,
     context_length: int = 0,
     stop_token: Optional[str] = None,
 ) -> str:
@@ -29,23 +31,33 @@ def generate_from_llm(
 
     Parameters:
         messages (List[dict[str, str]]): A List of messages to construct the conversation context.
-        model (str): The model name to use for generating the completion.
-        temperature (float): Sampling temperature for generation.
-        max_tokens (int): Maximum number of tokens to generate.
-        top_p (float): Nucleus sampling parameter controlling the size of the probability mass to sample from.
+        model (str, optional): The model name to use for generating the completion.
+        temperature (float, optional): Sampling temperature for generation.
+        max_tokens (int, optional): Maximum number of tokens to generate.
+        top_p (float, optional): Nucleus sampling parameter controlling the size of the probability mass to sample from.
         context_length (int): The maximum number of tokens from `messages` to use for context.
         stop_token (str, optional): A token at which to stop generating further tokens.
 
     Returns:
         str: The generated response as a string.
     """
+    # Get model configuration
+    model_config = get_model_config(model)
+    
+    # Use provided parameters or fall back to model defaults
+    config = {
+        "model": model or get_default_model(),
+        "temperature": temperature if temperature is not None else model_config["temperature"],
+        "max_tokens": max_tokens if max_tokens is not None else model_config["max_tokens"],
+        "top_p": top_p if top_p is not None else model_config["top_p"],
+    }
+    
+    if stop_token:
+        config["stop"] = [stop_token]
+        
     response = litellm.completion(
-        model=model,
         messages=messages,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        top_p=top_p,
-        stop=[stop_token] if stop_token else None,
+        **config
     )
     answer: str = response.choices[0].message.content
     return answer

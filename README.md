@@ -18,6 +18,33 @@ the `jobber_fsm` folder contains another approach based on [finite state machine
 
 the downside of fsm agent is that it is dependent on [structured output](https://openai.com/index/introducing-structured-outputs-in-the-api/) from open ai. so you can't reliably use cheaper models like gpt4o-mini or other oss models which is possible in `jobber`
 
+### Model Configuration
+
+The project uses a centralized model configuration system that supports multiple LLM providers through [litellm](https://github.com/BerriAI/litellm). You can easily switch between different models by editing `jobber/config/model_config.py`.
+
+#### Available Models
+- Groq: `llama-3.3-70b-versatile` (default)
+- OpenAI: `gpt-4-turbo-preview`
+- Anthropic: `claude-3-opus-20240229`
+
+#### How to Change Models
+1. Edit `jobber/config/model_config.py`
+2. To change the default model, modify `DEFAULT_MODEL`
+3. To add a new model, add it to the `AVAILABLE_MODELS` dictionary
+
+Example model configuration:
+```python
+AVAILABLE_MODELS = {
+    "groq/llama-3.3-70b-versatile": {
+        "provider": "groq",
+        "max_tokens": 4096,
+        "temperature": 0.7,
+        "top_p": 1.0,
+    },
+    # Add your custom model here
+}
+```
+
 ### setup
 
 1. we recommend installing poetry before proceeding with the next steps. you can install poetry using these [instructions](https://python-poetry.org/docs/#installation)
