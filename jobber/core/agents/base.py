@@ -28,6 +28,7 @@ class BaseAgent:
         model_config = get_model_config(model)
         self.llm_config = {
             "model": model or get_default_model(),
+            "api_base": model_config["api_base"],
             "temperature": model_config["temperature"],
             "max_tokens": model_config["max_tokens"],
             "top_p": model_config["top_p"],
